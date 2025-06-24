@@ -1,0 +1,70 @@
+#TASK 04
+
+from google.colab import files
+files.upload()  
+
+!mkdir -p ~/.kaggle
+!cp kaggle.json ~/.kaggle/
+!chmod 600 ~/.kaggle/kaggle.json
+
+
+!pip install -q kaggle
+!kaggle datasets download -d gti-upm/leapgestrecog
+!unzip -q leapgestrecog.zip -d leapGestRecog
+
+import os
+import cv2
+import numpy as np
+from tqdm import tqdm
+from sklearn.model_selection import train_test_split
+
+IMG_SIZE = 64
+data_dir = 'leapGestRecog'
+X, y = [], []
+
+for user_folder in sorted(os.listdir(data_dir)):
+    path = os.path.join(data_dir, user_folder)
+    if os.path.isdir(path):
+        for file in os.listdir(path):
+            label = file.split('_')[1]  
+            img = cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE)
+            img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
+            X.append(img)
+            y.append(label)
+
+X = np.array(X).reshape(-1, IMG_SIZE, IMG_SIZE, 1) / 255.0
+y = np.array(y)
+
+
+from sklearn.preprocessing import LabelEncoder
+from tensorflow.keras.utils import to_categorical
+
+le = LabelEncoder()
+y_encoded = le.fit_transform(y)
+y_cat = to_categorical(y_encoded)
+
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+
+model = Sequential([
+    Conv2D(32, (3, 3), activation='relu', input_shape=(IMG_SIZE, IMG_SIZE, 1)),
+    MaxPooling2D(2, 2),
+    Conv2D(64, (3, 3), activation='relu'),
+    MaxPooling2D(2, 2),
+    Flatten(),
+    Dense(128, activation='relu'),
+    Dropout(0.5),
+    Dense(len(np.unique(y_encoded)), activation='softmax')
+])
+
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+
+X_train, X_test, y_train, y_test = train_test_split(X, y_cat, test_size=0.2, random_state=42)
+
+model.fit(X_train, y_train, epochs=10, validation_data=(X_test, y_test), batch_size=32)
+
+
+loss, accuracy = model.evaluate(X_test, y_test)
+print(f"Test Accuracy: {accuracy * 100:.2f}%")
